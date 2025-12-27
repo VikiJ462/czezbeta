@@ -1,0 +1,323 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+    position: relative; /* Pro absolutní pozicování přetahovatelných prvků */
+}
+
+.search-container {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto 30px;
+    text-align: center;
+}
+
+.logo {
+    font-size: 3rem;
+    font-weight: bold;
+    color: white;
+    margin-bottom: 30px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.search-form {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.search-input {
+    flex: 1;
+    padding: 15px 20px;
+    border: none;
+    border-radius: 50px;
+    font-size: 16px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #333;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.search-input:focus {
+    background: white;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
+}
+
+.search-button, .translator-button {
+    padding: 15px 30px;
+    border: none;
+    border-radius: 50px;
+    background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.search-button:hover, .translator-button:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    background: linear-gradient(45deg, #ff5252, #d63031);
+}
+
+.translator-button {
+    background: linear-gradient(45deg, #28a745, #218838); /* Zelenější barva pro překladač */
+    margin-top: 15px; /* Mezera mezi vyhledáváním a překladačem */
+}
+
+.translator-button:hover {
+    background: linear-gradient(45deg, #218838, #1e7e34);
+}
+
+.loading {
+    display: none;
+    color: white;
+    margin-top: 10px;
+}
+
+.loading.show {
+    display: block;
+}
+
+.spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 10px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Výsledky vyhledávání */
+.results-container {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 15px;
+    padding: 30px;
+    margin-top: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+    display: none;
+    text-align: left;
+}
+
+.results-container.show {
+    display: block;
+    animation: slideIn 0.5s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.results-header {
+    color: #333;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #eee;
+}
+
+.search-result {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
+}
+
+.search-result:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.result-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 8px;
+}
+
+.result-url {
+    color: #27ae60;
+    font-size: 14px;
+    margin-bottom: 10px;
+    text-decoration: none;
+}
+
+.result-description {
+    color: #555;
+    line-height: 1.5;
+    font-size: 14px;
+}
+
+.no-results {
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    padding: 40px;
+}
+
+.stats {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 15px;
+}
+
+/* Aktuální novinky */
+.draggable-container {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 15px;
+    padding: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    width: 350px; /* Pevná šířka pro novinky */
+    position: absolute; /* Umožňuje přesouvání */
+    bottom: 20px; /* Počáteční pozice dole vpravo */
+    right: 20px;
+    color: white;
+    cursor: grab;
+    transition: box-shadow 0.2s ease;
+    z-index: 1000; /* Zajistí, že je nad ostatním obsahem */
+}
+
+.draggable-container:active {
+    cursor: grabbing;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.news-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.news-header h3 {
+    margin: 0;
+    color: white;
+    font-size: 1.2rem;
+}
+
+.refresh-news {
+    cursor: pointer;
+    font-size: 1.2rem;
+    color: rgba(255, 255, 255, 0.8);
+    transition: transform 0.2s ease;
+}
+
+.refresh-news:hover {
+    transform: rotate(30deg);
+    color: white;
+}
+
+.news-content {
+    max-height: 300px; /* Omezení výšky pro scrollování */
+    overflow-y: auto; /* Povolí scrollování, pokud je obsah delší */
+}
+
+.news-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.news-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+.news-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+}
+
+.news-item {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 10px 15px;
+    margin-bottom: 10px;
+    transition: background 0.2s ease;
+}
+
+.news-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.news-item a {
+    text-decoration: none;
+    color: white;
+}
+
+.news-item h4 {
+    margin-top: 0;
+    margin-bottom: 5px;
+    font-size: 1rem;
+}
+
+.news-item p {
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+
+/* Responzivní design */
+@media (max-width: 768px) {
+    .search-form {
+        flex-direction: column;
+    }
+    
+    .search-button, .translator-button {
+        margin-top: 10px;
+    }
+    
+    .logo {
+        font-size: 2rem;
+    }
+    
+    .search-container {
+        padding: 30px 20px;
+    }
+
+    .draggable-container {
+        width: 90%;
+        left: 5%;
+        right: 5%;
+        bottom: 20px;
+        position: fixed; /* Fixujeme pozici na menších obrazovkách */
+    }
+}

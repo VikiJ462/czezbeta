@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>czez</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="search-container">
+        <div class="logo">🔍 Czez</div>
+        
+        <form class="search-form" id="searchForm">
+            <input 
+                type="text" 
+                class="search-input" 
+                id="searchInput" 
+                placeholder="Zadejte hledaný výraz..." 
+                required
+                autocomplete="off"
+            >
+            <button type="submit" class="search-button">
+                Vyhledat
+            </button>
+        </form>
+
+        <button type="button" class="translator-button" id="translatorButton">
+            Překladač
+        </button>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            Vyhledávám...
+        </div>
+    </div>
+
+    <div class="results-container" id="resultsContainer">
+        <div class="results-header">
+            <h2>Výsledky vyhledávání</h2>
+            <div class="stats" id="searchStats"></div>
+        </div>
+        <div id="resultsContent"></div>
+    </div>
+
+    <div class="draggable-container" id="newsContainer" draggable="true">
+        <div class="news-header">
+            <h3>Aktuální Novinky <span class="refresh-news" id="refreshNews">🔄</span></h3>
+        </div>
+        <div class="news-content" id="newsContent">
+            <p>Načítám novinky...</p>
+        </div>
+    </div>
+
+    <script src="search-database.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async function() {
+            const searchForm = document.getElementById('searchForm');
+            const searchInput = document.getElementById('searchInput');
+            const loading = document.getElementById('loading');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const resultsContent = document.getElementById('resultsContent');
+            const searchStats = document.getElementById('searchStats');
+            const translatorButton = document.getElementById('translatorButton');
+            const newsContainer = document.getElementById('newsContainer');
+            const newsContent = document.getElementById('newsContent');
+            const refreshNewsButton = document.getElementById('refreshNews');
+
+            // --- Přidáno pro Lingva API překlad ---
+            const LINGVA_API_BASE_URL = 'https://lingva.ml/api/v1/';
+
+            async function translateText(text, targetLang = 'cs') {
+                if (!text.trim()) return text;
+                
+                await new Promise(resolve => setTimeout(resolve, 200));
+
+                const apiUrl = `${LINGVA_API_BASE_URL}auto/${targetLang}/${encodeURIComponent(text)}`;
+                try {
+                    const response = await fetch(apiUrl);
+                    if (!response.ok) {
+                        const errorDetail = await response.text().catch(() => 'Neznámý detail chyby');
+                        console.error(`Chyba při volání Lingva API (${response.status} ${response.statusText}) pro text "${text.substring(0, 50)}...":`, errorDetail);
+                        return `[Chyba překladu] ${text}`;
+                    }
+                    const data = await response.json();
+                    if (data && typeof data.translation === 'string') {
+                        return data.translation;
+                    } else {
+                        console.warn('Lingva API vrátilo neočekávanou strukturu dat pro překlad:', data);
+                        return `[Chyba překladu] ${text}`;
+                    }
+                } catch (error) {
+                    console.error('Došlo k chybě při komunikaci s Lingva API:', error);
+                    return `[Chyba sítě/API] ${text}`;
+                }
+            }
+
+            // --- IndexedDB Databáze ---
+            let db;
+            const DB_NAME = 'CzezSearchDB';
+            const DB_VERSION = 1;
+            const STORE_NAME = 'websites';
+
+            // Inicializace IndexedDB
+            async function initDatabase() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    
+                    request.onerror = () => {
+                        console.error('Chyba při otevírání databáze:', request.error);
+                        reject(request.error);
+                    };
+                    
+                    request.onsuccess = () => {
+                        db = request.result;
+                        console.log('Databáze úspěšně otevřena');
+                        resolve(db);
+                    };
+                    
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        
+                        // Vytvoření object store (tabulky)
+                        const store = db.createObjectStore(STORE_NAME, { 
+                            keyPath: 'id', 
+                            autoIncrement: true 
+                        });
+                        
+                        // Vytvoření indexů pro vyhledávání
+                        store.createIndex('title_idx', 'title', { unique: false });
+                        store.createIndex('description_idx', 'description', { unique: false });
+                        store.createIndex('keywords_idx', 'keywords', { unique: false });
+                        store.createIndex('url_idx', 'url', { unique: true });
+                        
+                        console.log('Databáze vytvořena');
+                        
+                        // Naplnění dat z searchDatabase.js
+                        const transaction = event.target.transaction;
+                        const storeTx = transaction.objectStore(STORE_NAME);
+                        
+                        searchDatabase.forEach(item => {
+                            // Převod keywords pole na string pro snadnější vyhledávání
+                            const dbItem = {
+                                title: item.title,
+                                url: item.url,
+                                description: item.description,
+                                keywords: item.keywords.join(',')
+                            };
+                            storeTx.add(dbItem);
+                        });
+                        
+                        console.log('Data načtena do IndexedDB');
+                    };
+                });
+            }
+
+            // Vyhledávání v IndexedDB
+            async function searchInDatabase(query) {
+                if (!db) {
+                    await initDatabase();
+                }
+
+                return new Promise((resolve, reject) => {
+                    const results = [];
+                    const transaction = db.transaction([STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    
+                    // Otevření kurzoru přes všechny záznamy
+                    const request = store.openCursor();
+                    
+                    request.onerror = () => {
+                        reject(request.error);
+                    };
+                    
+                    request.onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        
+                        if (cursor) {
+                            const item = cursor.value;
+                            let score = 0;
+                            const queryWords = query.split(' ');
+                            
+                            // Kontrola názvu (nejvyšší váha)
+                            if (item.title.toLowerCase().includes(query)) {
+                                score += 10;
+                            }
+                            
+                            // Kontrola popisu
+                            if (item.description.toLowerCase().includes(query)) {
+                                score += 5;
+                            }
+                            
+                            // Kontrola klíčových slov (uložených jako string)
+                            if (item.keywords.toLowerCase().includes(query)) {
+                                score += 7;
+                            }
+                            
+                            // Kontrola jednotlivých slov
+                            queryWords.forEach(word => {
+                                if (word.length > 2) {
+                                    if (item.title.toLowerCase().includes(word)) score += 3;
+                                    if (item.description.toLowerCase().includes(word)) score += 2;
+                                    if (item.keywords.toLowerCase().includes(word)) score += 2;
+                                }
+                            });
+                            
+                            if (score > 0) {
+                                results.push({
+                                    title: item.title,
+                                    url: item.url,
+                                    description: item.description,
+                                    keywords: item.keywords.split(','),
+                                    score: score,
+                                    id: cursor.key
+                                });
+                            }
+                            
+                            cursor.continue();
+                        } else {
+                            // Seřadit podle skóre (nejvyšší skóre první)
+                            resolve(results.sort((a, b) => b.score - a.score));
+                        }
+                    };
+                });
+            }
+
+            // Inicializace databáze při načtení stránky
+            await initDatabase();
+
+            // Funkce pro vyhledávání
+            async function performSearch(query) {
+                if (!query.trim()) {
+                    alert('Prosím zadejte hledaný výraz');
+                    return;
+                }
+
+                loading.classList.add('show');
+                resultsContainer.classList.remove('show');
+
+                try {
+                    const results = await searchInDatabase(query.trim().toLowerCase());
+                    displayResults(results, query);
+                } catch (error) {
+                    console.error('Chyba při vyhledávání:', error);
+                    searchStats.textContent = `Chyba při vyhledávání: ${error.message}`;
+                    resultsContent.innerHTML = `
+                        <div class="no-results">
+                            <h3>😔 Došlo k chybě</h3>
+                            <p>Zkuste obnovit stránku nebo zkuste hledat jiný výraz.</p>
+                        </div>
+                    `;
+                } finally {
+                    loading.classList.remove('show');
+                    resultsContainer.classList.add('show');
+                }
+            }
+
+            // Funkce pro zobrazení výsledků
+            function displayResults(results, query) {
+                if (results.length === 0) {
+                    searchStats.textContent = `Nenalezeny žádné výsledky pro "${query}"`;
+                    resultsContent.innerHTML = `
+                        <div class="no-results">
+                            <h3>😔 Žádné výsledky</h3>
+                            <p>Zkuste:</p>
+                            <ul style="list-style: none; padding: 0; margin-top: 15px;">
+                                <li>• Používat obecnější výrazy</li>
+                                <li>• Kontrolovat překlepy</li>
+                                <li>• Vyhledat "javascript", "html", "css", "python"</li>
+                            </ul>
+                        </div>
+                    `;
+                    return;
+                }
+
+                searchStats.textContent = `Nalezeno ${results.length} výsledků pro "${query}" (${(Math.random() * 0.5 + 0.1).toFixed(2)} sekund)`;
+                
+                resultsContent.innerHTML = results.map(result => `
+                    <div class="search-result">
+                        <div class="result-title">${highlightText(result.title, query)}</div>
+                        <a href="${result.url}" class="result-url" target="_blank">${result.url}</a>
+                        <div class="result-description">${highlightText(result.description, query)}</div>
+                    </div>
+                `).join('');
+            }
+
+            // Funkce pro zvýraznění hledaného textu
+            function highlightText(text, query) {
+                const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                return text.replace(regex, '<mark style="background: #ffeb3b; padding: 2px 4px; border-radius: 3px;">$1</mark>');
+            }
+
+            // Obsluha odeslání formuláře
+            searchForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const query = searchInput.value;
+                performSearch(query);
+            });
+
+            // Obsluha kliknutí na tlačítko "Překladač"
+            translatorButton.addEventListener('click', function() {
+                window.location.href = 'https://vikij462.github.io/Mega_Prekladac/';
+            });
+
+            // Automatické zaměření na vstupní pole
+            searchInput.focus();
+
+            // Hover efekty
+            searchInput.addEventListener('mouseenter', function() {
+                this.style.transform = 'scale(1.02)';
+            });
+
+            searchInput.addEventListener('mouseleave', function() {
+                this.style.transform = 'scale(1)';
+            });
+
+            // Efekt psaní
+            searchInput.addEventListener('input', function() {
+                if (this.value.length > 0) {
+                    this.style.borderLeft = '4px solid #ff6b6b';
+                } else {
+                    this.style.borderLeft = 'none';
+                }
+            });
+
+            // Live search
+            let searchTimeout;
+            searchInput.addEventListener('input', function() {
+                clearTimeout(searchTimeout);
+                const query = this.value.trim();
+                
+                if (query.length > 2) {
+                    searchTimeout = setTimeout(() => {
+                        performSearch(query);
+                    }, 800);
+                } else if (query.length === 0) {
+                    resultsContainer.classList.remove('show');
+                }
+            });
+
+            // --- Funkce pro aktuální novinky s překladem ---
+            const fetchNews = async () => {
+                newsContent.innerHTML = '<p>Načítám a překládám novinky...</p>';
+                const rssFeedUrl = 'http://feeds.bbci.co.uk/news/world/rss.xml';
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssFeedUrl)}`;
+
+                try {
+                    const response = await fetch(proxyUrl);
+                    if (!response.ok) {
+                        throw new Error(`HTTP chyba z proxy! Status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    
+                    if (!data || !data.contents) {
+                        throw new Error('Odpověď z proxy neobsahuje obsah pro RSS.');
+                    }
+
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(data.contents, "text/xml");
+                    
+                    if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+                        console.error("Chyba při parsování XML RSS feedu:", xmlDoc.getElementsByTagName("parsererror")[0].textContent);
+                        throw new Error('Chyba při parsování RSS feedu.');
+                    }
+
+                    const items = xmlDoc.querySelectorAll('item');
+                    let newsHtml = '';
+                    let count = 0;
+
+                    if (items.length === 0) {
+                        newsHtml = '<p>Nenalezeny žádné novinky. RSS feed je prázdný nebo obsahuje neplatná data.</p>';
+                        console.warn("RSS feed neobsahuje žádné 'item' elementy.");
+                    } else {
+                        const translationPromises = [];
+                        const newsItemsData = [];
+
+                        for (let i = 0; i < items.length && count < 5; i++) {
+                            const titleElement = items[i].querySelector('title');
+                            const linkElement = items[i].querySelector('link');
+                            const descriptionElement = items[i].querySelector('description');
+
+                            const originalTitle = titleElement ? titleElement.textContent : 'No Title';
+                            const link = linkElement ? linkElement.textContent : '#';
+                            const originalDescription = descriptionElement ? descriptionElement.textContent : 'No Description';
+
+                            const cleanOriginalDescription = originalDescription.replace(/<[^>]*>?/gm, '');
+
+                            translationPromises.push(translateText(originalTitle));
+                            translationPromises.push(translateText(cleanOriginalDescription));
+                            
+                            newsItemsData.push({
+                                link: link,
+                                originalTitle: originalTitle,
+                                originalDescription: cleanOriginalDescription
+                            });
+                            count++;
+                        }
+
+                        const translatedTexts = await Promise.all(translationPromises);
+                        let translatedIndex = 0;
+
+                        newsItemsData.forEach(item => {
+                            const translatedTitle = translatedTexts[translatedIndex++];
+                            const translatedDescription = translatedTexts[translatedIndex++];
+                            
+                            newsHtml += `
+                                <div class="news-item">
+                                    <a href="${item.link}" target="_blank"><h4>${translatedTitle}</h4></a>
+                                    <p>${translatedDescription.substring(0, 150)}...</p>
+                                </div>
+                            `;
+                        });
+                    }
+                    newsContent.innerHTML = newsHtml;
+                } catch (error) {
+                    console.error("Chyba při načítání, parsování nebo překladu novinek:", error);
+                    newsContent.innerHTML = `<p>Nepodařilo se načíst novinky. Zkuste to prosím později. (<span style="color: red;">Chyba: ${error.message}</span>)</p>`;
+                }
+            };
+
+            // Načtení novinek při načtení stránky
+            fetchNews();
+
+            // Obnovení novinek při kliknutí na tlačítko
+            refreshNewsButton.addEventListener('click', fetchNews);
+
+            // --- Funkce pro Drag and Drop ---
+            let isDragging = false;
+            let currentX;
+            let currentY;
+            let initialX;
+            let initialY;
+            let xOffset = 0;
+            let yOffset = 0;
+
+            newsContainer.addEventListener('mousedown', dragStart);
+            newsContainer.addEventListener('mouseup', dragEnd);
+            newsContainer.addEventListener('mousemove', drag);
+
+            function dragStart(e) {
+                if (e.target === newsContainer || e.target.closest('.news-header')) {
+                    initialX = e.clientX - xOffset;
+                    initialY = e.clientY - yOffset;
+                    isDragging = true;
+                }
+            }
+
+            function dragEnd(e) {
+                isDragging = false;
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+
+                    xOffset = currentX;
+                    yOffset = currentY;
+
+                    setTranslate(currentX, currentY, newsContainer);
+                }
+            }
+
+            function setTranslate(xPos, yPos, el) {
+                el.style.transform = "translate3d(" + xPos + "px, " + yPos + "px, 0)";
+            }
+        });
+    </script>
+</body>
+</html>
